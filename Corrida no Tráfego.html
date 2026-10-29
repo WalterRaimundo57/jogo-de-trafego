@@ -1,0 +1,140 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, user-scalable=no">
+<title>Corrida no Tráfego</title>
+<style>
+:root{--bg:#e8ecef;--fg:#1c2127;box-sizing:border-box;padding-top:env(safe-area-inset-top,0px);padding-bottom:env(safe-area-inset-bottom,0px)}
+@media (prefers-color-scheme:dark){:root:not([data-theme="light"]){--bg:#14171a;--fg:#eef1f4}}
+:root[data-theme="dark"]{--bg:#14171a;--fg:#eef1f4}
+html,body{height:100%;margin:0;background:var(--bg);color:var(--fg);font-family:system-ui,-apple-system,"Segoe UI",sans-serif;overflow:hidden;overscroll-behavior:none}
+body{display:flex;align-items:center;justify-content:center;background:var(--bg)}
+canvas{display:block;height:100%;max-width:100%;aspect-ratio:9/16;touch-action:none;user-select:none;-webkit-user-select:none;-webkit-tap-highlight-color:transparent}
+</style>
+</head>
+<body>
+<canvas id="c" width="360" height="640"></canvas>
+<script>
+(function(){
+var cv=document.getElementById('c'),g=cv.getContext('2d');
+var W=360,H=640,LANES=4,RX=30,LW=75;
+function lx(i){return RX+LW*i+LW/2}
+var COLORS=['#e63946','#f4a261','#2a9d8f','#8d5fd3','#3a86ff','#f1c40f'];
+var state='start',best=0,p,cars,speed,dist,spawnAt,lastLane,shake,offs;
+try{best=parseInt(localStorage.getItem('corrida_best')||'0',10)||0}catch(e){}
+
+function reset(){
+  p={lane:1,x:lx(1),y:520,w:34,h:60};
+  cars=[];speed=280;dist=0;spawnAt=0;lastLane=-1;shake=0;offs=0;
+}
+reset();
+
+function start(){reset();state='play'}
+function move(d){
+  if(state!=='play')return;
+  p.lane=Math.max(0,Math.min(LANES-1,p.lane+d));
+}
+function tapAt(clientX){
+  if(state!=='play'){start();return}
+  var r=cv.getBoundingClientRect();
+  move(clientX<r.left+r.width/2?-1:1);
+}
+cv.addEventListener('pointerdown',function(e){e.preventDefault();tapAt(e.clientX)});
+window.addEventListener('keydown',function(e){
+  if(e.key==='ArrowLeft'||e.key==='a')move(-1);
+  else if(e.key==='ArrowRight'||e.key==='d')move(1);
+  else if(e.key===' '||e.key==='Enter'){if(state!=='play')start()}
+});
+
+function spawn(){
+  var lane;
+  do{lane=Math.floor(Math.random()*LANES)}while(lane===lastLane&&Math.random()<0.6);
+  lastLane=lane;
+  cars.push({lane:lane,y:-80,w:34,h:60,f:0.35+Math.random()*0.3,c:COLORS[Math.floor(Math.random()*COLORS.length)]});
+}
+
+function crash(){
+  state='over';shake=18;
+  var sc=Math.floor(dist/10);
+  if(sc>best){best=sc;try{localStorage.setItem('corrida_best',String(best))}catch(e){}}
+  try{if(navigator.vibrate)navigator.vibrate(200)}catch(e){}
+}
+
+function update(dt){
+  if(state==='play'){
+    speed=Math.min(760,speed+9*dt);
+    dist+=speed*dt;
+    offs=(offs+speed*dt)%80;
+    spawnAt-=speed*dt;
+    if(spawnAt<=0){spawn();spawnAt=Math.max(190,330-speed*0.18)+Math.random()*60}
+    for(var i=cars.length-1;i>=0;i--){
+      var c=cars[i];c.y+=speed*(1-c.f)*dt;
+      if(c.y>H+90)cars.splice(i,1);
+    }
+    var tx=lx(p.lane);p.x+=(tx-p.x)*Math.min(1,dt*14);
+    for(var j=0;j<cars.length;j++){
+      var k=cars[j],cx=lx(k.lane);
+      if(Math.abs(cx-p.x)<(k.w+p.w)/2-4&&Math.abs(k.y-p.y)<(k.h+p.h)/2-6){crash();break}
+    }
+  }else if(state==='start'){
+    offs=(offs+120*dt)%80;
+  }
+  if(shake>0)shake=Math.max(0,shake-40*dt);
+}
+
+function car(x,y,w,h,col,up){
+  g.fillStyle='rgba(0,0,0,.25)';g.fillRect(x-w/2+3,y-h/2+4,w,h);
+  g.fillStyle=col;rr(x-w/2,y-h/2,w,h,8);g.fill();
+  g.fillStyle='rgba(255,255,255,.75)';
+  var wy=up?y-h/2+10:y+h/2-26;
+  rr(x-w/2+5,wy,w-10,16,4);g.fill();
+  g.fillStyle='rgba(0,0,0,.35)';
+  rr(x-w/2+5,up?y+8:y-h/2+8,w-10,12,3);g.fill();
+}
+function rr(x,y,w,h,r){g.beginPath();g.moveTo(x+r,y);g.arcTo(x+w,y,x+w,y+h,r);g.arcTo(x+w,y+h,x,y+h,r);g.arcTo(x,y+h,x,y,r);g.arcTo(x,y,x+w,y,r);g.closePath()}
+function txt(s,x,y,size,col,w){g.fillStyle=col||'#fff';g.font=(w||'700')+' '+size+'px system-ui,sans-serif';g.textAlign='center';g.fillText(s,x,y)}
+
+function draw(){
+  g.save();
+  if(shake>0)g.translate((Math.random()-.5)*shake,(Math.random()-.5)*shake);
+  g.fillStyle='#3b7a3f';g.fillRect(-20,-20,W+40,H+40);
+  g.fillStyle='#3a3f45';g.fillRect(RX,-20,LW*LANES,H+40);
+  g.fillStyle='#f5f5f5';g.fillRect(RX-4,-20,4,H+40);g.fillRect(RX+LW*LANES,-20,4,H+40);
+  g.fillStyle='rgba(255,255,255,.7)';
+  for(var l=1;l<LANES;l++)for(var y=-80+offs;y<H+80;y+=80)g.fillRect(RX+LW*l-2,y,4,40);
+  for(var i=0;i<cars.length;i++)car(lx(cars[i].lane),cars[i].y,cars[i].w,cars[i].h,cars[i].c,false);
+  car(p.x,p.y,p.w,p.h,'#ffffff',true);
+  g.fillStyle='#d62828';rr(p.x-p.w/2+8,p.y-p.h/2+22,p.w-16,10,3);g.fill();
+  g.restore();
+
+  if(state==='play'){
+    txt(String(Math.floor(dist/10)),W/2,44,34);
+    txt('Recorde '+best,W/2,66,13,'rgba(255,255,255,.85)','500');
+  }else{
+    g.fillStyle='rgba(0,0,0,.6)';g.fillRect(0,0,W,H);
+    if(state==='start'){
+      txt('Corrida no Tráfego',W/2,230,30);
+      txt('Toque para começar',W/2,300,20,'#ffd166');
+      txt('Toque na metade esquerda ou direita',W/2,350,14,'#fff','500');
+      txt('para trocar de faixa e desviar dos carros',W/2,372,14,'#fff','500');
+      if(best)txt('Recorde: '+best,W/2,420,16,'#fff','500');
+    }else{
+      txt('Batida!',W/2,230,36,'#ff6b6b');
+      txt('Pontos: '+Math.floor(dist/10),W/2,285,24);
+      txt('Recorde: '+best,W/2,320,18,'#ffd166');
+      txt('Toque para jogar de novo',W/2,390,18,'#fff','600');
+    }
+  }
+}
+
+var last=performance.now();
+function loop(t){
+  var dt=Math.min(0.05,(t-last)/1000);last=t;
+  update(dt);draw();requestAnimationFrame(loop);
+}
+requestAnimationFrame(loop);
+})();
+</script>
+</body>
+</html>
